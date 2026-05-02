@@ -113,33 +113,33 @@ def Main(matID):
               "poisson3Da",
               "example"]
 
-    mtx_path = f"Matrices/{matrix[matID]}/"+matrix[matID]+".mtx"
+    mtx_path = f"matrices/{matrix[matID]}/"+matrix[matID]+".mtx"
 
     rows,cols,values,no_of_rows,no_of_cols,NNZ_values = ProcessMTX(mtx_path)
     CSR_values,CSR_colIdx,CSR_rowPtr, CSR_redColIdx = coo_to_csr(rows,cols,values,no_of_rows)
 
-    with open('MatData/CSR_values.txt', 'w') as f:
+    with open('matrix_data/CSR_values.txt', 'w') as f:
         for item in CSR_values:
             f.write(f"{item}\n")
         # f.write(f"{CSR_values}")
     
-    with open('MatData/CSR_colIdx.txt', 'w') as f:
+    with open('matrix_data/CSR_colIdx.txt', 'w') as f:
         for item in CSR_colIdx:
             f.write(f"{item}\n")
         # f.write(f"{CSR_colIdx}")
     
-    with open('MatData/CSR_rowPtr.txt', 'w') as f:
+    with open('matrix_data/CSR_rowPtr.txt', 'w') as f:
         for item in CSR_rowPtr:
             f.write(f"{item}\n")
         # f.write(f"{CSR_rowPtr}")
     
-    with open('MatData/CSR_redColIdx.txt', 'w') as f:
+    with open('matrix_data/CSR_redColIdx.txt', 'w') as f:
         for item in CSR_redColIdx:
             f.write(f"{item}\n")
         # f.write(f"{CSR_redColIdx}")
             
-    with open('MatData/GeneralInfo.txt', 'w') as f:
+    with open('matrix_data/GeneralInfo.txt', 'w') as f:
         for item in [no_of_rows, no_of_cols, NNZ_values, max(CSR_redColIdx)+1]:
             f.write(f"{item}\n")
 
-Main(0)
+Main(11)
