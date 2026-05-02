@@ -5,7 +5,7 @@ void RowWiseInnerProduct(const int M, const int K, const int N, float* aD, int* 
     int row_count = 0;
     for(int row=0; row<M; row++){
         cR[row] = row_count;
-        float* cD_ = (float *)malloc(K*sizeof(float));
+        float* cD_ = (float *)calloc(K, sizeof(float));
         for(int col=aR[row]; col<aR[row+1]; col++){
             float valA = aD[col];
             for(int b_col=bR[aC[col]]; b_col<bR[aC[col]+1]; b_col++){
@@ -22,6 +22,7 @@ void RowWiseInnerProduct(const int M, const int K, const int N, float* aD, int* 
                 row_count++;
             }
         }
+        free(cD_);
     }
     cR[M] = row_count;
 }
@@ -41,7 +42,7 @@ int main(){
     int* gInfo = (int *)malloc(4*sizeof(int));
     //////////////////////////////////////////
     int number;
-    file3 = fopen("MatData/GeneralInfo.txt", "r");
+    file3 = fopen("matrix_data/GeneralInfo.txt", "r");
     if (file3 == NULL) {
         perror("Error opening file");
         return -1;
@@ -71,7 +72,7 @@ int main(){
 
     //////////////////////////////////////////
     idx = 0;
-    file = fopen("MatData/CSR_values.txt", "r");
+    file = fopen("matrix_data/CSR_values.txt", "r");
     if (file == NULL) {
         perror("Error opening file");
         return -1;
@@ -85,7 +86,7 @@ int main(){
     fclose(file);
 
     //////////////////////////////////////////
-    file1 = fopen("MatData/CSR_colIdx.txt", "r");
+    file1 = fopen("matrix_data/CSR_colIdx.txt", "r");
     if (file1 == NULL) {
         perror("Error opening file");
         return -1;
@@ -98,7 +99,7 @@ int main(){
     }
     fclose(file1);
     //////////////////////////////////////////
-    file2 = fopen("MatData/CSR_rowPtr.txt", "r");
+    file2 = fopen("matrix_data/CSR_rowPtr.txt", "r");
     if (file2 == NULL) {
         perror("Error opening file");
         return -1;
