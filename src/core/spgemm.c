@@ -48,6 +48,13 @@ rvsp_status_t rvsp_spgemm_csr(const rvsp_csr_matrix_t *A, const rvsp_csr_matrix_
         return rvsp_spgemm_csr_scalar_f32(A, B, C);
     }
 
+    if (backend == RVSP_BACKEND_SCALAR &&
+        input_dtype == RVSP_DTYPE_INT8 &&
+        output_dtype == RVSP_DTYPE_INT32) // review this format of output
+    {
+        return rvsp_spgemm_csr_scalar_i8(A, B, C);
+    }
+
     if (backend == RVSP_BACKEND_SCALAR_UNROLL4 &&
         input_dtype == RVSP_DTYPE_FP32 &&
         output_dtype == RVSP_DTYPE_FP32)
