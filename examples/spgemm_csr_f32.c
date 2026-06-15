@@ -1,15 +1,27 @@
+/*
+1. Definir matrices CSR.
+2. Crear descriptores con rvsp_csr_create().
+3. Seleccionar backend scalar FP32.
+4. Llamar a rvsp_spgemm_csr().
+5. Obtener una matriz C generada por la librería.
+6. Liberar correctamente la memoria.
+*/
+
 #include <stdio.h>
 #include "rv_sparse.h"
 
-static void print_csr_matrix(const rvsp_csr_matrix_t *A) {
+static void print_csr_matrix(const rvsp_csr_matrix_t *A)
+{
     const float *values = (const float *)A->values;
 
     printf("rows = %d, cols = %d, nnz = %d\n", A->rows, A->cols, A->nnz);
 
-    for (int32_t i = 0; i < A->rows; i++) {
+    for (int32_t i = 0; i < A->rows; i++)
+    {
         printf("row %d:", i);
 
-        for (int32_t p = A->row_ptr[i]; p < A->row_ptr[i + 1]; p++) {
+        for (int32_t p = A->row_ptr[i]; p < A->row_ptr[i + 1]; p++)
+        {
             printf(" (%d, %.2f)", A->col_idx[p], values[p]);
         }
 
@@ -17,7 +29,8 @@ static void print_csr_matrix(const rvsp_csr_matrix_t *A) {
     }
 }
 
-int main(void) {
+int main(void)
+{
     /*
      * A =
      * [1 2]
@@ -50,10 +63,10 @@ int main(void) {
         a_row_ptr,
         a_col_idx,
         a_values,
-        RVSP_DTYPE_FP32
-    );
+        RVSP_DTYPE_FP32);
 
-    if (status != RVSP_SUCCESS) {
+    if (status != RVSP_SUCCESS)
+    {
         printf("Failed to create A: %s\n", rvsp_status_to_string(status));
         return 1;
     }
@@ -66,10 +79,10 @@ int main(void) {
         b_row_ptr,
         b_col_idx,
         b_values,
-        RVSP_DTYPE_FP32
-    );
+        RVSP_DTYPE_FP32);
 
-    if (status != RVSP_SUCCESS) {
+    if (status != RVSP_SUCCESS)
+    {
         printf("Failed to create B: %s\n", rvsp_status_to_string(status));
         return 1;
     }
@@ -78,12 +91,12 @@ int main(void) {
         .backend = RVSP_BACKEND_SCALAR,
         .input_dtype = RVSP_DTYPE_FP32,
         .output_dtype = RVSP_DTYPE_FP32,
-        .sort_output_indices = 1
-    };
+        .sort_output_indices = 1};
 
     status = rvsp_spgemm_csr(&A, &B, &C, &options);
 
-    if (status != RVSP_SUCCESS) {
+    if (status != RVSP_SUCCESS)
+    {
         printf("SpGEMM failed: %s\n", rvsp_status_to_string(status));
         return 1;
     }

@@ -1,40 +1,127 @@
-CC ?= gcc
-CFLAGS ?= -O2 -Wall -Wextra -Wpedantic -std=c11
-INCLUDES = -Iinclude
+# ==============================================================================
+# rv-sparse Build System
+# ==============================================================================
 
-BUILD_DIR = build
+#Note : If you want to test separate part of the back-end dont edit this makefile 
+# this makefile is only for test the entire API
 
-SRC = \
-	src/core/matrix.c \
-	src/core/error.c \
-	src/core/spgemm.c \
-	src/kernels/spgemm/csr_spgemm_wrappers.c\
-	src/kernels/spgemm/csr_scalar_f32.c
-	
+# ------------------------------------------------------------------------------
+# Build Configuration
+# ------------------------------------------------------------------------------
+# TARGET_ARCH can be set to 'native' (default) or 'riscv' via command line:
+# e.g., make TARGET_ARCH=riscv
+TARGET_ARCH ?= native
 
-EXAMPLE_F32 = $(BUILD_DIR)/spgemm_csr_f32
-TEST_F32 = $(BUILD_DIR)/test_spgemm_csr_f32
+# Build type (debug or release)
+BUILD_TYPE ?= release
 
-.PHONY: all run test check clean
+# ------------------------------------------------------------------------------
+# Directories
+# ------------------------------------------------------------------------------
+SRC_DIR     := src
+INC_DIR     := include
+OBJ_DIR     := obj
+BIN_DIR     := bin
+TEST_DIR    := tests
+LIB_DIR     := lib
 
-all: $(EXAMPLE_F32) $(TEST_F32)
+# ------------------------------------------------------------------------------
+# Toolchain & Architecture Flags Selection
+# ------------------------------------------------------------------------------
+ifeq ($(TARGET_ARCH), riscv)
+    # RISC-V Cross-Compilation Toolchain (Linux GNU version)
+    CC        := riscv64-linux-gnu-gcc
+    AR        := riscv64-linux-gnu-ar
+    
+    # Architecture: 64-bit, General (IMAFD), Compressed (C), Vector (V)
+    # IMPORTANTE: Se añade -static para que QEMU pueda ejecutarlo sin librerías externas
+    ARCH_FLAGS := -march=rv64gcv -mabi=lp64d -static
+    
+    # Execution Wrapper for Tests (QEMU with Vector support enabled)
+    EXEC_WRAPPER := qemu-riscv64-static -cpu rv64,v=true
+else
+    # Native Compilation Toolchain (x86_64 or local host)
+    CC        := gcc
+    AR        := ar
+    
+    # Native architecture optimizations
+    ARCH_FLAGS := -march=native
+    
+    # No wrapper needed for native execution
+    EXEC_WRAPPER := 
+    
+    $(info ---> Target Architecture: NATIVE Host)
+endif
 
-$(BUILD_DIR):
-	mkdir -p $(BUILD_DIR)
+# ------------------------------------------------------------------------------
+# Compiler Flags
+# ------------------------------------------------------------------------------
+# Base flags
+CFLAGS := -Wall -Wextra -Wpedantic -std=c99 -I$(INC_DIR) $(ARCH_FLAGS)
 
-$(EXAMPLE_F32): $(SRC) examples/spgemm_csr_f32.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $(SRC) examples/spgemm_csr_f32.c -o $(EXAMPLE_F32)
+# Build type flags
+ifeq ($(BUILD_TYPE), debug)
+    CFLAGS += -g -O0 -DDEBUG
+    $(info ---> Build Type: DEBUG)
+else
+    CFLAGS += -O3 -flto
+    $(info ---> Build Type: RELEASE)
+endif
 
-$(TEST_F32): $(SRC) tests/test_spgemm_csr_f32.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDES) $(SRC) tests/test_spgemm_csr_f32.c -o $(TEST_F32)
+# ------------------------------------------------------------------------------
+# Source Files & Object Mapping
+# ------------------------------------------------------------------------------
+# Find all C files in the src directory and its subdirectories (core, formats, kernels)
+SRCS := $(shell find $(SRC_DIR) -name '*.c')
 
-run: $(EXAMPLE_F32)
-	./$(EXAMPLE_F32)
+# Map source files to object files in the build/obj directory
+OBJS := $(patsubst $(SRC_DIR)/%.c, $(OBJ_DIR)/%.o, $(SRCS))
 
-test: $(TEST_F32)
-	./$(TEST_F32)
+# Static library output
+STATIC_LIB := $(LIB_DIR)/librvsparse.a
 
-check: all test
+# Test sources and binaries
+TEST_SRCS := $(shell find $(TEST_DIR) -name '*.c')
+TEST_BINS := $(patsubst $(TEST_DIR)/%.c, $(BIN_DIR)/%, $(TEST_SRCS))
 
+# ------------------------------------------------------------------------------
+# Targets
+# ------------------------------------------------------------------------------
+.PHONY: all clean test dirs
+
+# Default target
+all: dirs $(STATIC_LIB) $(TEST_BINS)
+
+# Create necessary directories
+dirs:
+	@mkdir -p $(OBJ_DIR) $(BIN_DIR) $(LIB_DIR)
+	@mkdir -p $(dir $(OBJS)) # Ensure nested obj directories exist
+
+# Build the static library
+$(STATIC_LIB): $(OBJS)
+	@echo "  AR      $@"
+	@$(AR) rcs $@ $^
+
+# Compile source files to object files
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
+	@echo "  CC      $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
+
+# Build test executables (linking against the static library)
+$(BIN_DIR)/%: $(TEST_DIR)/%.c $(STATIC_LIB)
+	@echo "  CCLD    $@"
+	@$(CC) $(CFLAGS) $< -L$(LIB_DIR) -lrvsparse -o $@
+
+# Run all tests
+test: all
+	@echo "\n--- Running Tests ---"
+	@for test_bin in $(TEST_BINS); do \
+		echo "Executing $$test_bin..."; \
+		$(EXEC_WRAPPER) ./$$test_bin || exit 1; \
+	done
+	@echo "--- All Tests Passed ---\n"
+
+# Clean build artifacts
 clean:
-	rm -rf $(BUILD_DIR)
+	@echo "  CLEAN   $(OBJ_DIR) $(BIN_DIR) $(LIB_DIR)"
+	@rm -rf $(OBJ_DIR) $(BIN_DIR) $(LIB_DIR)
