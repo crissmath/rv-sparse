@@ -1,3 +1,4 @@
+#include <stddef.h>
 #include "rv_sparse.h"
 #include "csr_spgemm_kernels.h"
 
