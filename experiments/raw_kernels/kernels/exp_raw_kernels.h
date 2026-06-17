@@ -36,4 +36,19 @@ rvsp_status_t exp_accumulate_row_i8_rvv(
     int32_t b_cols,
     int32_t *acc);
 
+rvsp_status_t exp_spgemm_csr_rvv_i8_raw(
+    int32_t a_rows,
+    int32_t a_cols,
+    int32_t b_cols,
+    const int32_t *a_row_ptr,
+    const int32_t *a_col_idx,
+    const int8_t *a_values,
+    const int32_t *b_row_ptr,
+    const int32_t *b_col_idx,
+    const int8_t *b_values,
+    int32_t **c_row_ptr_out,
+    int32_t **c_col_idx_out,
+    int32_t **c_values_out,
+    int32_t *c_nnz_out);
+
 #endif /* EXP_RAW_KERNELS_H */
