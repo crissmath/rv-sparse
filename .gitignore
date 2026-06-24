@@ -4,6 +4,10 @@ bin/
 obj/
 lib/
 
+# Raw kernel experiment build artifacts
+experiments/raw_kernels/bin/
+experiments/raw_kernels/obj/
+
 # Compiled files
 *.o
 *.a
