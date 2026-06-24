@@ -7,7 +7,6 @@
  */
 #include <stddef.h>
 #include <stdint.h>
-
 #include "exp_raw_kernels.h"
 
 #if defined(__riscv_vector) && defined(__riscv_v_intrinsic) // sugest in RV intricsics
@@ -60,10 +59,8 @@ rvsp_status_t exp_accumulate_row_i8_rvv_indexed(int8_t a_val, int32_t b_nnz, con
 
         vuint32m4_t voffsets = __riscv_vsll_vx_u32m4(vcols_u32, 2, vl);
 
-        // vacc = acc[col]
         vint32m4_t vacc = __riscv_vluxei32_v_i32m4(acc, voffsets, vl);
 
-        // acc[col] += a_val * b_values[p]
         vint32m4_t vsum = __riscv_vadd_vv_i32m4(vacc, vprod_i32, vl);
         __riscv_vsuxei32_v_i32m4(acc, voffsets, vsum, vl);
 

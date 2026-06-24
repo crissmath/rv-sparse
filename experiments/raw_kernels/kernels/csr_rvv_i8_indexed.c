@@ -2,7 +2,6 @@
 // Copyright (C) 2026 rv-sparse contributors
 //
 //  SPDX-License-Identifier: GPL-3.0-only
-//
 //  Experimental CSR SpGEMM RVV INT8 raw kernel using indexed accumulation.
 //  Computes INT8 x INT8 with INT32 accumulation/output.
 //
