@@ -111,16 +111,13 @@ int main(void)
 
     assert(status == RVSP_SUCCESS);
 
-    assert_same_csr_i32(
-        a_rows,
-        c_ref_row_ptr,
-        c_ref_col_idx,
-        c_ref_values,
-        c_ref_nnz,
-        c_rvv_row_ptr,
-        c_rvv_col_idx,
-        c_rvv_values,
-        c_rvv_nnz);
+    assert_same_csr_i32(a_rows, c_ref_row_ptr, c_ref_col_idx,
+                        c_ref_values,
+                        c_ref_nnz,
+                        c_rvv_row_ptr,
+                        c_rvv_col_idx,
+                        c_rvv_values,
+                        c_rvv_nnz);
 
     free(c_ref_row_ptr);
     free(c_ref_col_idx);

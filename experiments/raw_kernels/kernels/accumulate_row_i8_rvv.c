@@ -14,13 +14,11 @@
 #include <riscv_vector.h>
 #endif
 
-          rvsp_status_t exp_accumulate_row_i8_rvv(
-              int8_t a_val,
-              int32_t b_nnz,
-              const int32_t *b_col_idx,
-              const int8_t *b_values,
-              int32_t b_cols,
-              int32_t *acc)
+rvsp_status_t exp_accumulate_row_i8_rvv(int8_t a_val, int32_t b_nnz,
+                                        const int32_t *b_col_idx,
+                                        const int8_t *b_values,
+                                        int32_t b_cols,
+                                        int32_t *acc)
 {
     if (!b_col_idx || !b_values || !acc)
     {
@@ -42,13 +40,6 @@
         vint8m1_t vb = __riscv_vle8_v_i8m1(&b_values[p], vl);
         vint16m2_t vprod = __riscv_vwmul_vx_i16m2(vb, a_val, vl);
 
-        /*
-         * Temporary scalar scatter.
-         *
-         * This first RVV version vectorizes the INT8 multiply step.
-         * The indexed accumulation into acc[col] is still scalar.
-         * Later versions can experiment with indexed gather/scatter.
-         */
         int16_t tmp[vl];
         __riscv_vse16_v_i16m2(tmp, vprod, vl);
 
