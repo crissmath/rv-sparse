@@ -2,13 +2,13 @@
 
 set -e
 
-RESOURCE_FILE="${1:-matrices/mat_resources.txt}" # add for accept diferent file 
-RAW_DIR="data/raw"
+RESOURCE_FILE="${1:-matrices/mat_resources.txt}"
+RAW_DIR="${RAW_DIR:-matrices/raw}"
 
 mkdir -p "$RAW_DIR"
 
 if [ ! -f "$RESOURCE_FILE" ]; then
-    echo "Error: $RESOURCE_FILE not found."
+    echo "Error: resource file not found: $RESOURCE_FILE"
     exit 1
 fi
 

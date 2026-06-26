@@ -8,6 +8,22 @@ lib/
 experiments/raw_kernels/bin/
 experiments/raw_kernels/obj/
 
+# Matrix Market raw datasets
+matrices/raw/*
+!matrices/raw/.gitkeep
+
+# Converted CSR INT8 matrix bank
+matrix_data/csr_i8/*
+!matrix_data/csr_i8/.gitkeep
+
+# Matrix bank lists
+!matrix_data/lists/
+!matrix_data/lists/.gitkeep
+!matrix_data/lists/*.txt
+
+# experimental scripts
+scripts/
+
 # Compiled files
 *.o
 *.a
