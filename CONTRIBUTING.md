@@ -67,8 +67,8 @@ Examples:
 
 ```text
 experiment/raw-kernels-rvv
-review/ayokunle-benchmarks
-review/talha-rvv-kernel
+review/name-benchmarks
+review/name2-rvv-kernel
 ```
 
 ## 3. Make Atomic Commits
@@ -336,33 +336,6 @@ For FP32 kernels, use GFLOPS when appropriate.
 
 Do not commit large datasets, generated binaries, or heavy raw benchmark outputs unless explicitly approved.
 
-## GCC Auto-Vectorization Reports
-
-If a contribution discusses GCC auto-vectorization, include evidence.
-
-Recommended compiler flags:
-
-```bash
--fopt-info-vec
--fopt-info-vec-missed
-```
-
-When needed, also provide assembly output:
-
-```bash
--S
-```
-
-For RISC-V Vector auto-vectorization, report:
-
-```text
-GCC version
-compile command
--march and -mabi flags
-vectorization report
-whether RVV instructions appear in the generated assembly
-```
-
 ## Files That Should Not Be Committed
 
 Do not commit generated artifacts such as:
@@ -411,8 +384,8 @@ git checkout -b review/<contributor-name>-<topic> <remote-name>/<branch>
 Example:
 
 ```bash
-git fetch ayokunle
-git checkout -b review/ayokunle-benchmarks ayokunle/main
+git fetch name
+git checkout -b review/name-benchmarks name/main
 ```
 
 After reviewing and testing, merge only if the contribution is correct, clean, and properly attributed.
