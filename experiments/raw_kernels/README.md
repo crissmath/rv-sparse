@@ -137,6 +137,113 @@ test_csr_rvv_i8_indexed_marked_raw: PASS [RVV optimized path]
 --- All Raw Kernel Tests Passed ---
 ```
 
+## Functional Benchmark Evidence
+
+In addition to correctness tests, this workspace includes a preliminary functional benchmark comparison using a small subset of real SuiteSparse matrices converted to CSR INT8 format.
+
+The benchmark was executed through the RISC-V cross-compilation flow and QEMU with RVV enabled:
+
+```bash
+make clean
+make benchmarks TARGET_ARCH=riscv
+```
+
+Example execution mode:
+
+```bash
+qemu-riscv64-static -cpu rv64,v=true ./bin/bench_spgemm_i8_raw <matrix_dir>
+```
+
+The purpose of this benchmark is to provide an initial comparison between the experimental raw kernels and to verify that the benchmark infrastructure works correctly with real sparse matrices.
+
+The current comparison uses four representative matrices:
+
+```text
+oscil_dcop_30
+poli
+dwt_2680
+Goodwin_013
+```
+
+These matrices were selected to cover different matrix sizes and sparsity patterns.
+
+## Important Note About QEMU Results
+
+The plots below are useful for functional comparison, debugging, and early kernel screening.
+
+However, they should not be interpreted as final hardware performance results.
+
+QEMU-based execution is useful to validate:
+
+```text
+correctness
+RISC-V binary execution
+RVV code path availability
+relative functional behavior
+benchmark infrastructure
+```
+
+Final performance metrics such as execution time, speedup, memory bandwidth, cycles, cache behavior, and energy efficiency must be collected on real RISC-V hardware with RVV support.
+
+Therefore, these plots are preliminary and should be used only as experimental evidence before hardware validation.
+
+## Preliminary Benchmark Plots
+
+### Median Runtime by Kernel
+
+This plot compares the median execution time of each kernel across the selected matrices.
+
+![Median runtime by kernel](plots/median_runtime_by_kernel.png)
+
+### Speedup Against Scalar Reference
+
+This plot shows the relative speedup of each experimental kernel compared with the scalar reference implementation.
+
+![Speedup vs scalar reference](plots/speedup_vs_scalar_median.png)
+
+### Estimated GOPS by Kernel
+
+This plot reports estimated GOPS using the structural operation count derived from candidate products in the sparse multiplication.
+
+![Estimated GOPS by kernel](plots/estimated_gops_by_kernel.png)
+
+### Runtime Variability
+
+This plot shows the coefficient of variation across repeated runs. It is used to identify unstable measurements.
+
+![Runtime variability by kernel](plots/runtime_cv_percent_by_kernel.png)
+
+### Candidate Products by Matrix
+
+This plot reports the estimated number of candidate products for each matrix. This helps explain the structural complexity of the SpGEMM operation.
+
+![Candidate products by matrix](plots/candidate_products_by_matrix.png)
+
+### Output Nonzeros by Matrix
+
+This plot reports the number of nonzero values generated in the output matrix `C`.
+
+![Output nonzeros by matrix](plots/output_nnz_by_matrix.png)
+
+## RVV Code Generation Evidence
+
+The RVV kernels were also inspected at the assembly level. The generated assembly contains RISC-V Vector instructions such as:
+
+```asm
+vsetvli
+vle8.v
+vwmul.vx
+vle32.v
+vsext.vf2
+vluxei32.v
+vadd.vv
+vsuxei32.v
+```
+
+This confirms that the checked indexed RVV accumulation kernels are compiled into actual RVV instructions.
+
+This verification only confirms RVV code generation. It does not replace performance evaluation on real RISC-V hardware.
+
 ## Integration Policy
 
 Only the best validated kernel should be migrated to the main library backend.
