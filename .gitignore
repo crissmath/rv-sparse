@@ -8,6 +8,23 @@ lib/
 experiments/raw_kernels/bin/
 experiments/raw_kernels/obj/
 
+
+# Local benchmark source experiments
+experiments/raw_kernels/benchmarks/
+
+# Raw kernel benchmark outputs
+results/
+experiments/raw_kernels/results/*
+!experiments/raw_kernels/results/.gitkeep
+
+# Raw kernel benchmark plots
+experiments/raw_kernels/plots/*
+!experiments/raw_kernels/plots/.gitkeep
+!experiments/raw_kernels/plots/*.png
+
+# Local raw-kernel helper tools
+experiments/raw_kernels/tools/
+
 # Matrix Market raw datasets
 matrices/raw/*
 !matrices/raw/.gitkeep
@@ -19,9 +36,12 @@ matrix_data/csr_i8/*
 # Matrix bank lists
 !matrix_data/lists/
 !matrix_data/lists/.gitkeep
-!matrix_data/lists/*.txt
+!matrix_data/lists/spgemm40_names.txt
 
-# experimental scripts
+# Generated matrix bank paths
+matrix_data/lists/spgemm40_csr_i8.txt
+
+# Local experimental scripts
 scripts/
 
 # Compiled files
@@ -37,6 +57,9 @@ scripts/
 *.gcda
 *.gcno
 *.profraw
+
+# Assembly generated for inspection
+*.s
 
 # Editor / OS files
 .vscode/
