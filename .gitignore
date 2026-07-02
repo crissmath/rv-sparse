@@ -22,6 +22,7 @@ lib/
 .vscode/
 .idea/
 .DS_Store
+compile_commands.json
 
 # Temporary files
 *.tmp

@@ -123,10 +123,11 @@ TEST_BINS := $(patsubst $(TEST_DIR)/%.c,$(BIN_DIR)/test/%,$(TEST_SRCS))
 
 # Only build examples that are currently supported by the implemented API.
 # Keep future or experimental examples out of this list until their backend exists.
-EXAMPLE_SRCS := \
-	$(EXAMPLE_DIR)/spgemm_csr_f32.c
-
+# EXAMPLE_SRCS := \
+# 	$(EXAMPLE_DIR)/spgemm_csr_f32.c
+EXAMPLE_SRCS := $(shell find $(EXAMPLE_DIR) -name '*.c')
 EXAMPLE_BINS := $(patsubst $(EXAMPLE_DIR)/%.c,$(BIN_DIR)/examples/%,$(EXAMPLE_SRCS))
+#
 
 # ------------------------------------------------------------------------------
 # Targets
