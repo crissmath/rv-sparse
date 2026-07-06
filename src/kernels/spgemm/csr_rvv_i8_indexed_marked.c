@@ -1,258 +1,506 @@
-/*
- * Copyright (C) 2026 rv-sparse contributors
- *
- * SPDX-License-Identifier: GPL-3.0-only
- *
- * Experimental optimized CSR SpGEMM RVV INT8 raw kernel.
- *
- * Computes INT8 x INT8 with INT32 accumulation/output.
- *
- * Optimization strategy:
- * - Reuse one dense accumulator across rows.
- * - Track touched columns using marker/touched arrays.
- * - Avoid scanning all B columns when constructing each output row.
- * - Use RVV indexed gather/scatter for row accumulation.
- */
-
 #include <stdint.h>
 #include <stdlib.h>
+#include <limits.h>
 
 #include "csr_spgemm_kernels.h"
 
-static int compare_i32(const void *a, const void *b)
+static int compare_i32_rvv_i8(const void *a, const void *b)
 {
-    int32_t x = *(const int32_t *)a;
-    int32_t y = *(const int32_t *)b;
+    int32_t ia = *(const int32_t *)a;
+    int32_t ib = *(const int32_t *)b;
 
-    return (x > y) - (x < y);
+    if (ia < ib) {
+        return -1;
+    }
+
+    if (ia > ib) {
+        return 1;
+    }
+
+    return 0;
 }
 
-static rvsp_status_t reserve_output_capacity(int32_t **col_idx, int32_t **values,
-                                             int32_t *capacity,
-                                             int32_t required)
+static void clear_i8_workspace(
+    int32_t *acc,
+    uint8_t *mark,
+    const int32_t *touched,
+    int32_t touched_count
+)
 {
-    if (required <= *capacity)
-    {
-        return RVSP_SUCCESS;
+    for (int32_t i = 0; i < touched_count; i++) {
+        int32_t col = touched[i];
+        acc[col] = 0;
+        mark[col] = 0;
     }
+}
 
-    int32_t new_capacity = *capacity > 0 ? *capacity : 64;
+static rvsp_status_t mark_i8_row_columns(
+    int32_t b_nnz,
+    const int32_t *b_col_idx,
+    int32_t b_cols,
+    int32_t *acc,
+    uint8_t *mark,
+    int32_t *touched,
+    int32_t *touched_count
+)
+{
+    for (int32_t p = 0; p < b_nnz; p++) {
+        int32_t col = b_col_idx[p];
 
-    while (new_capacity < required)
-    {
-        if (new_capacity > INT32_MAX / 2)
-        {
-            return RVSP_ERROR_ALLOCATION_FAILED;
+        if (col < 0 || col >= b_cols) {
+            return RVSP_ERROR_INVALID_ARGUMENT;
         }
 
-        new_capacity *= 2;
+        if (mark[col] == 0) {
+            mark[col] = 1;
+            touched[*touched_count] = col;
+            (*touched_count)++;
+            acc[col] = 0;
+        }
     }
-
-    int32_t *new_col_idx = (int32_t *)realloc(
-        *col_idx,
-        (size_t)new_capacity * sizeof(int32_t));
-
-    if (!new_col_idx)
-    {
-        return RVSP_ERROR_ALLOCATION_FAILED;
-    }
-
-    int32_t *new_values = (int32_t *)realloc(
-        *values,
-        (size_t)new_capacity * sizeof(int32_t));
-
-    if (!new_values)
-    {
-        return RVSP_ERROR_ALLOCATION_FAILED;
-    }
-
-    *col_idx = new_col_idx;
-    *values = new_values;
-    *capacity = new_capacity;
 
     return RVSP_SUCCESS;
 }
 
-rvsp_status_t rvsp_spgemm_csr_rvv_i8_indexed_marked_raw(int32_t a_rows, int32_t a_cols, int32_t b_cols,
-                                                       const int32_t *a_row_ptr, const int32_t *a_col_idx,
-                                                       const int8_t *a_values, const int32_t *b_row_ptr,
-                                                       const int32_t *b_col_idx, const int8_t *b_values,
-                                                       int32_t **c_row_ptr_out, int32_t **c_col_idx_out,
-                                                       int32_t **c_values_out, int32_t *c_nnz_out)
+static rvsp_status_t accumulate_i8_row_scalar_marked(
+    int8_t a_val,
+    int32_t b_nnz,
+    const int32_t *b_col_idx,
+    const int8_t *b_values,
+    int32_t b_cols,
+    int32_t *acc,
+    uint8_t *mark,
+    int32_t *touched,
+    int32_t *touched_count
+)
 {
-    if (!a_row_ptr || !a_col_idx || !a_values ||
-        !b_row_ptr || !b_col_idx || !b_values ||
-        !c_row_ptr_out || !c_col_idx_out ||
-        !c_values_out || !c_nnz_out)
-    {
-        return RVSP_ERROR_NULL_POINTER;
+    for (int32_t p = 0; p < b_nnz; p++) {
+        int32_t col = b_col_idx[p];
+
+        if (col < 0 || col >= b_cols) {
+            return RVSP_ERROR_INVALID_ARGUMENT;
+        }
+
+        if (mark[col] == 0) {
+            mark[col] = 1;
+            touched[*touched_count] = col;
+            (*touched_count)++;
+            acc[col] = 0;
+        }
+
+        acc[col] += (int32_t)a_val * (int32_t)b_values[p];
     }
 
-    if (a_rows <= 0 || a_cols <= 0 || b_cols <= 0)
-    {
+    return RVSP_SUCCESS;
+}
+
+static rvsp_status_t build_b_duplicate_flags_i8(
+    int32_t b_rows,
+    int32_t b_cols,
+    const int32_t *b_row_ptr,
+    const int32_t *b_col_idx,
+    uint8_t *b_has_duplicates
+)
+{
+    uint8_t *seen = NULL;
+    int32_t *seen_touched = NULL;
+
+    if (b_cols > 0) {
+        seen = (uint8_t *)calloc((size_t)b_cols, sizeof(uint8_t));
+        seen_touched = (int32_t *)malloc((size_t)b_cols * sizeof(int32_t));
+
+        if (seen == NULL || seen_touched == NULL) {
+            free(seen);
+            free(seen_touched);
+            return RVSP_ERROR_ALLOCATION_FAILED;
+        }
+    }
+
+    for (int32_t row = 0; row < b_rows; row++) {
+        int32_t start = b_row_ptr[row];
+        int32_t end = b_row_ptr[row + 1];
+
+        if (start < 0 || end < start) {
+            free(seen);
+            free(seen_touched);
+            return RVSP_ERROR_INVALID_ARGUMENT;
+        }
+
+        int32_t seen_count = 0;
+
+        for (int32_t p = start; p < end; p++) {
+            int32_t col = b_col_idx[p];
+
+            if (col < 0 || col >= b_cols) {
+                for (int32_t i = 0; i < seen_count; i++) {
+                    seen[seen_touched[i]] = 0;
+                }
+
+                free(seen);
+                free(seen_touched);
+                return RVSP_ERROR_INVALID_ARGUMENT;
+            }
+
+            if (seen[col] != 0) {
+                b_has_duplicates[row] = 1;
+            } else {
+                seen[col] = 1;
+                seen_touched[seen_count] = col;
+                seen_count++;
+            }
+        }
+
+        for (int32_t i = 0; i < seen_count; i++) {
+            seen[seen_touched[i]] = 0;
+        }
+    }
+
+    free(seen);
+    free(seen_touched);
+
+    return RVSP_SUCCESS;
+}
+
+static rvsp_status_t accumulate_i8_row_rvv_or_scalar(
+    int8_t a_val,
+    int32_t b_nnz,
+    const int32_t *b_col_idx,
+    const int8_t *b_values,
+    int32_t b_cols,
+    int32_t *acc,
+    uint8_t *mark,
+    int32_t *touched,
+    int32_t *touched_count,
+    uint8_t has_duplicates
+)
+{
+    if (has_duplicates) {
+        return accumulate_i8_row_scalar_marked(
+            a_val,
+            b_nnz,
+            b_col_idx,
+            b_values,
+            b_cols,
+            acc,
+            mark,
+            touched,
+            touched_count
+        );
+    }
+
+    rvsp_status_t status = mark_i8_row_columns(
+        b_nnz,
+        b_col_idx,
+        b_cols,
+        acc,
+        mark,
+        touched,
+        touched_count
+    );
+
+    if (status != RVSP_SUCCESS) {
+        return status;
+    }
+
+    return rvsp_accumulate_row_i8_rvv_indexed_fast(
+        a_val,
+        b_nnz,
+        b_col_idx,
+        b_values,
+        acc
+    );
+}
+
+rvsp_status_t rvsp_spgemm_csr_rvv_i8_indexed_marked_raw(
+    int32_t a_rows,
+    int32_t a_cols,
+    int32_t b_cols,
+    const int32_t *a_row_ptr,
+    const int32_t *a_col_idx,
+    const int8_t *a_values,
+    const int32_t *b_row_ptr,
+    const int32_t *b_col_idx,
+    const int8_t *b_values,
+    int32_t **c_row_ptr_out,
+    int32_t **c_col_idx_out,
+    int32_t **c_values_out,
+    int32_t *c_nnz_out
+)
+{
+    if (a_rows < 0 || a_cols < 0 || b_cols < 0 ||
+        a_row_ptr == NULL || a_col_idx == NULL || a_values == NULL ||
+        b_row_ptr == NULL || b_col_idx == NULL || b_values == NULL ||
+        c_row_ptr_out == NULL || c_col_idx_out == NULL ||
+        c_values_out == NULL || c_nnz_out == NULL) {
         return RVSP_ERROR_INVALID_ARGUMENT;
     }
 
+    *c_row_ptr_out = NULL;
+    *c_col_idx_out = NULL;
+    *c_values_out = NULL;
+    *c_nnz_out = 0;
+
     int32_t *c_row_ptr = (int32_t *)calloc((size_t)a_rows + 1, sizeof(int32_t));
+    int32_t *acc = NULL;
+    int32_t *touched = NULL;
+    uint8_t *mark = NULL;
+    uint8_t *b_has_duplicates = NULL;
 
-    int32_t output_capacity = 64;
-    int32_t *c_col_idx = (int32_t *)malloc((size_t)output_capacity * sizeof(int32_t));
-    int32_t *c_values = (int32_t *)malloc((size_t)output_capacity * sizeof(int32_t));
-
-    int32_t *acc = (int32_t *)malloc((size_t)b_cols * sizeof(int32_t));
-    int32_t *marker = (int32_t *)malloc((size_t)b_cols * sizeof(int32_t));
-    int32_t *touched = (int32_t *)malloc((size_t)b_cols * sizeof(int32_t));
-
-    if (!c_row_ptr || !c_col_idx || !c_values || !acc || !marker || !touched)
-    {
-        free(c_row_ptr);
-        free(c_col_idx);
-        free(c_values);
-        free(acc);
-        free(marker);
-        free(touched);
+    if (c_row_ptr == NULL) {
         return RVSP_ERROR_ALLOCATION_FAILED;
     }
 
-    for (int32_t col = 0; col < b_cols; col++)
-    {
-        marker[col] = -1;
-        acc[col] = 0;
+    if (b_cols > 0) {
+        acc = (int32_t *)malloc((size_t)b_cols * sizeof(int32_t));
+        touched = (int32_t *)malloc((size_t)b_cols * sizeof(int32_t));
+        mark = (uint8_t *)calloc((size_t)b_cols, sizeof(uint8_t));
+
+        if (acc == NULL || touched == NULL || mark == NULL) {
+            free(c_row_ptr);
+            free(acc);
+            free(touched);
+            free(mark);
+            return RVSP_ERROR_ALLOCATION_FAILED;
+        }
     }
 
-    int32_t nnz_count = 0;
+    if (a_cols > 0) {
+        b_has_duplicates = (uint8_t *)calloc((size_t)a_cols, sizeof(uint8_t));
 
-    for (int32_t row = 0; row < a_rows; row++)
-    {
-        c_row_ptr[row] = nnz_count;
+        if (b_has_duplicates == NULL) {
+            free(c_row_ptr);
+            free(acc);
+            free(touched);
+            free(mark);
+            return RVSP_ERROR_ALLOCATION_FAILED;
+        }
 
-        int32_t touched_count = 0;
+        rvsp_status_t status = build_b_duplicate_flags_i8(
+            a_cols,
+            b_cols,
+            b_row_ptr,
+            b_col_idx,
+            b_has_duplicates
+        );
 
+        if (status != RVSP_SUCCESS) {
+            free(c_row_ptr);
+            free(acc);
+            free(touched);
+            free(mark);
+            free(b_has_duplicates);
+            return status;
+        }
+    }
+
+    int64_t total_nnz = 0;
+
+    for (int32_t row = 0; row < a_rows; row++) {
         int32_t a_start = a_row_ptr[row];
         int32_t a_end = a_row_ptr[row + 1];
 
-        for (int32_t a_pos = a_start; a_pos < a_end; a_pos++)
-        {
-            int32_t k = a_col_idx[a_pos];
+        if (a_start < 0 || a_end < a_start) {
+            free(c_row_ptr);
+            free(acc);
+            free(touched);
+            free(mark);
+            free(b_has_duplicates);
+            return RVSP_ERROR_INVALID_ARGUMENT;
+        }
 
-            if (k < 0 || k >= a_cols)
-            {
+        int32_t touched_count = 0;
+
+        for (int32_t ap = a_start; ap < a_end; ap++) {
+            int32_t a_col = a_col_idx[ap];
+
+            if (a_col < 0 || a_col >= a_cols) {
+                clear_i8_workspace(acc, mark, touched, touched_count);
                 free(c_row_ptr);
-                free(c_col_idx);
-                free(c_values);
                 free(acc);
-                free(marker);
                 free(touched);
-                return RVSP_ERROR_INVALID_CSR;
+                free(mark);
+                free(b_has_duplicates);
+                return RVSP_ERROR_INVALID_ARGUMENT;
             }
 
-            int32_t b_start = b_row_ptr[k];
-            int32_t b_end = b_row_ptr[k + 1];
+            int32_t b_start = b_row_ptr[a_col];
+            int32_t b_end = b_row_ptr[a_col + 1];
 
-            /*
-             * Prepass:
-             * - validate columns
-             * - register touched columns
-             * - initialize accumulator entries for the current row
-             */
-            for (int32_t b_pos = b_start; b_pos < b_end; b_pos++)
-            {
-                int32_t col = b_col_idx[b_pos];
-
-                if (col < 0 || col >= b_cols)
-                {
-                    free(c_row_ptr);
-                    free(c_col_idx);
-                    free(c_values);
-                    free(acc);
-                    free(marker);
-                    free(touched);
-                    return RVSP_ERROR_INVALID_CSR;
-                }
-
-                if (marker[col] != row)
-                {
-                    marker[col] = row;
-                    touched[touched_count] = col;
-                    touched_count++;
-                    acc[col] = 0;
-                }
+            if (b_start < 0 || b_end < b_start) {
+                clear_i8_workspace(acc, mark, touched, touched_count);
+                free(c_row_ptr);
+                free(acc);
+                free(touched);
+                free(mark);
+                free(b_has_duplicates);
+                return RVSP_ERROR_INVALID_ARGUMENT;
             }
 
-            rvsp_status_t status = rvsp_accumulate_row_i8_rvv_indexed_fast(a_values[a_pos], b_end - b_start,
-                                                                          &b_col_idx[b_start], &b_values[b_start],
-                                                                          acc);
+            rvsp_status_t status = accumulate_i8_row_rvv_or_scalar(
+                a_values[ap],
+                b_end - b_start,
+                &b_col_idx[b_start],
+                &b_values[b_start],
+                b_cols,
+                acc,
+                mark,
+                touched,
+                &touched_count,
+                b_has_duplicates ? b_has_duplicates[a_col] : 0
+            );
 
-            if (status != RVSP_SUCCESS)
-            {
+            if (status != RVSP_SUCCESS) {
+                clear_i8_workspace(acc, mark, touched, touched_count);
                 free(c_row_ptr);
-                free(c_col_idx);
-                free(c_values);
                 free(acc);
-                free(marker);
                 free(touched);
+                free(mark);
+                free(b_has_duplicates);
                 return status;
             }
         }
 
-        // Keep output deterministic and comparable with the scalar reference.
-        qsort(touched, (size_t)touched_count, sizeof(int32_t), compare_i32);
+        int32_t row_nnz = 0;
 
-        rvsp_status_t status = reserve_output_capacity(&c_col_idx, &c_values,
-                                                       &output_capacity, nnz_count + touched_count);
+        for (int32_t i = 0; i < touched_count; i++) {
+            int32_t col = touched[i];
 
-        if (status != RVSP_SUCCESS)
-        {
+            if (acc[col] != 0) {
+                row_nnz++;
+            }
+        }
+
+        clear_i8_workspace(acc, mark, touched, touched_count);
+
+        total_nnz += row_nnz;
+
+        if (total_nnz > INT32_MAX) {
+            free(c_row_ptr);
+            free(acc);
+            free(touched);
+            free(mark);
+            free(b_has_duplicates);
+            return RVSP_ERROR_ALLOCATION_FAILED;
+        }
+
+        c_row_ptr[row + 1] = row_nnz;
+    }
+
+    int32_t prefix = 0;
+
+    for (int32_t row = 0; row < a_rows; row++) {
+        int32_t row_count = c_row_ptr[row + 1];
+        c_row_ptr[row] = prefix;
+        prefix += row_count;
+        c_row_ptr[row + 1] = prefix;
+    }
+
+    int32_t c_nnz = (int32_t)total_nnz;
+
+    int32_t *c_col_idx = NULL;
+    int32_t *c_values = NULL;
+
+    if (c_nnz > 0) {
+        c_col_idx = (int32_t *)malloc((size_t)c_nnz * sizeof(int32_t));
+        c_values = (int32_t *)malloc((size_t)c_nnz * sizeof(int32_t));
+
+        if (c_col_idx == NULL || c_values == NULL) {
             free(c_row_ptr);
             free(c_col_idx);
             free(c_values);
             free(acc);
-            free(marker);
             free(touched);
-            return status;
+            free(mark);
+            free(b_has_duplicates);
+            return RVSP_ERROR_ALLOCATION_FAILED;
         }
+    }
 
-        for (int32_t i = 0; i < touched_count; i++)
-        {
-            int32_t col = touched[i];
+    for (int32_t row = 0; row < a_rows; row++) {
+        int32_t a_start = a_row_ptr[row];
+        int32_t a_end = a_row_ptr[row + 1];
+        int32_t touched_count = 0;
 
-            if (acc[col] != 0)
-            {
-                c_col_idx[nnz_count] = col;
-                c_values[nnz_count] = acc[col];
-                nnz_count++;
+        for (int32_t ap = a_start; ap < a_end; ap++) {
+            int32_t a_col = a_col_idx[ap];
+            int32_t b_start = b_row_ptr[a_col];
+            int32_t b_end = b_row_ptr[a_col + 1];
+
+            rvsp_status_t status = accumulate_i8_row_rvv_or_scalar(
+                a_values[ap],
+                b_end - b_start,
+                &b_col_idx[b_start],
+                &b_values[b_start],
+                b_cols,
+                acc,
+                mark,
+                touched,
+                &touched_count,
+                b_has_duplicates ? b_has_duplicates[a_col] : 0
+            );
+
+            if (status != RVSP_SUCCESS) {
+                clear_i8_workspace(acc, mark, touched, touched_count);
+                free(c_row_ptr);
+                free(c_col_idx);
+                free(c_values);
+                free(acc);
+                free(touched);
+                free(mark);
+                free(b_has_duplicates);
+                return status;
             }
         }
-    }
 
-    c_row_ptr[a_rows] = nnz_count;
+        qsort(touched, (size_t)touched_count, sizeof(int32_t), compare_i32_rvv_i8);
 
-    int32_t *final_col_idx = (int32_t *)realloc(
-        c_col_idx,
-        (size_t)nnz_count * sizeof(int32_t));
+        int32_t out_pos = c_row_ptr[row];
 
-    if (final_col_idx)
-    {
-        c_col_idx = final_col_idx;
-    }
+        for (int32_t i = 0; i < touched_count; i++) {
+            int32_t col = touched[i];
 
-    int32_t *final_values = (int32_t *)realloc(
-        c_values,
-        (size_t)nnz_count * sizeof(int32_t));
+            if (acc[col] != 0) {
+                if (out_pos >= c_row_ptr[row + 1]) {
+                    clear_i8_workspace(acc, mark, touched, touched_count);
+                    free(c_row_ptr);
+                    free(c_col_idx);
+                    free(c_values);
+                    free(acc);
+                    free(touched);
+                    free(mark);
+                    free(b_has_duplicates);
+                    return RVSP_ERROR_INVALID_ARGUMENT;
+                }
 
-    if (final_values)
-    {
-        c_values = final_values;
+                c_col_idx[out_pos] = col;
+                c_values[out_pos] = acc[col];
+                out_pos++;
+            }
+        }
+
+        clear_i8_workspace(acc, mark, touched, touched_count);
+
+        if (out_pos != c_row_ptr[row + 1]) {
+            free(c_row_ptr);
+            free(c_col_idx);
+            free(c_values);
+            free(acc);
+            free(touched);
+            free(mark);
+            free(b_has_duplicates);
+            return RVSP_ERROR_INVALID_ARGUMENT;
+        }
     }
 
     free(acc);
-    free(marker);
     free(touched);
+    free(mark);
+    free(b_has_duplicates);
 
     *c_row_ptr_out = c_row_ptr;
     *c_col_idx_out = c_col_idx;
     *c_values_out = c_values;
-    *c_nnz_out = nnz_count;
+    *c_nnz_out = c_nnz;
 
     return RVSP_SUCCESS;
 }
