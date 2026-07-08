@@ -34,7 +34,8 @@ extern "C"
         RVSP_DTYPE_INT8,
         RVSP_DTYPE_INT32,
         RVSP_DTYPE_BF16,
-        RVSP_DTYPE_FP32
+        RVSP_DTYPE_FP32,
+        RVSP_DTYPE_FP64
     } rvsp_dtype_t;
 
     typedef enum
