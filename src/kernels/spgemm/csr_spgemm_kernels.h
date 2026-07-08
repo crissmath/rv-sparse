@@ -31,6 +31,11 @@ rvsp_status_t rvsp_spgemm_csr_scalar_f32(
     const rvsp_csr_matrix_t *B,
     rvsp_csr_matrix_t *C);
 
+rvsp_status_t rvsp_spgemm_csr_scalar_f64(
+    const rvsp_csr_matrix_t *A,
+    const rvsp_csr_matrix_t *B,
+    rvsp_csr_matrix_t *C);
+
 // Optimizations : unroll, fused , vectorized, etc ....
 rvsp_status_t rvsp_spgemm_csr_scalar_unroll4_f32(
     const rvsp_csr_matrix_t *A,
