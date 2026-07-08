@@ -14,7 +14,7 @@
 
 /*Note:
  * this is a basic dispacher, inspired in blas, from her the library decided what kernel use
- * in revision
+ * under revision
  * todo things :  structure for add new kernels easily..
  */
 
@@ -55,6 +55,13 @@ rvsp_status_t rvsp_spgemm_csr(const rvsp_csr_matrix_t *A, const rvsp_csr_matrix_
         return rvsp_spgemm_csr_scalar_i8(A, B, C);
     }
 
+    if (backend == RVSP_BACKEND_SCALAR &&
+        input_dtype == RVSP_DTYPE_FP64 &&
+        output_dtype == RVSP_DTYPE_FP64)
+    {
+        return rvsp_spgemm_csr_scalar_f64(A, B, C);
+    }
+
     if (backend == RVSP_BACKEND_SCALAR_UNROLL4 &&
         input_dtype == RVSP_DTYPE_FP32 &&
         output_dtype == RVSP_DTYPE_FP32)
@@ -75,6 +82,13 @@ rvsp_status_t rvsp_spgemm_csr(const rvsp_csr_matrix_t *A, const rvsp_csr_matrix_
         B->dtype == RVSP_DTYPE_FP32)
     {
         return rvsp_spgemm_csr_rvv_f32_indexed_marked(A, B, C);
+    }
+
+    if (backend == RVSP_BACKEND_RVV_INTRINSICS &&
+        A->dtype == RVSP_DTYPE_FP64 &&
+        B->dtype == RVSP_DTYPE_FP64)
+    {
+        return rvsp_spgemm_csr_rvv_f64_indexed_marked(A, B, C);
     }
 
     // default error
