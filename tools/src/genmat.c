@@ -986,3 +986,23 @@ void genmat_free_csr(csr_matrix_t *m) {
   m->ncols = 0;
   m->nnz = 0;
 }
+
+// export/save to file
+int genmat_save_csr_to_mtx(const csr_matrix_t *csr, const char *filename) {
+  FILE *f = fopen(filename, "w");
+  if (!f)
+    return -1;
+
+  fprintf(f, "%%%%MatrixMarket matrix coordinate real general\n");
+  fprintf(f, "%d %d %lld\n", csr->nrows, csr->ncols, csr->nnz);
+
+  for (int i = 0; i < csr->nrows; i++) {
+    for (int ptr = csr->row_ptr[i]; ptr < csr->row_ptr[i + 1]; ptr++) {
+      fprintf(f, "%d %d %.16e\n", i + 1, csr->col_idx[ptr] + 1,
+              csr->values[ptr]);
+    }
+  }
+
+  fclose(f);
+  return 0;
+}

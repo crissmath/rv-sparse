@@ -115,6 +115,29 @@ int main(void) {
   }
 
   // -----------------------------------------------------------------------
+  // Save to file
+  // -----------------------------------------------------------------------
+
+  // A little API conversion code (bound to change/be omitted in future
+  // versions)
+  csr_matrix_t result;
+
+  result.nrows = C.rows;
+  result.ncols = C.cols;
+  result.nnz = C.nnz;
+
+  result.row_ptr = C.row_ptr;
+  result.col_idx = C.col_idx;
+  result.values = C.values;
+
+  const char *filepath = "examples/ash85_x_ash85_result.mtx";
+  int save_status = genmat_save_csr_to_mtx(&result, filepath);
+  if (save_status == -1) {
+      perror("Error opening the file");
+      return EXIT_FAILURE;
+  }
+
+  // -----------------------------------------------------------------------
   // Cleanup
   // -----------------------------------------------------------------------
   genmat_free_csr(&gen);

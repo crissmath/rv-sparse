@@ -20,7 +20,7 @@
 TARGET_ARCH ?= native
 BUILD_TYPE  ?= release
 
-OPENMP   ?= 1
+OPENMP   ?= 0
 VALGRIND ?= 0
 
 # ------------------------------------------------------------------------------
@@ -46,6 +46,7 @@ TOOLS_INC_DIR    := $(TOOLS_DIR)/include
 ifeq ($(TARGET_ARCH), riscv)
     CC := riscv64-linux-gnu-gcc
     AR := riscv64-linux-gnu-ar
+    # AR := riscv64-linux-gnu-gcc-ar
 
     ARCH_FLAGS := -march=rv64gcv -mabi=lp64d -static
     EXEC_WRAPPER := qemu-riscv64-static -cpu rv64,v=true

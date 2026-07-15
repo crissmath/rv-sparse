@@ -27,15 +27,15 @@ typedef struct {
 typedef struct {
   int row_cnt;
   int col_cnt;
-  double density;     // nonzero ratio, default 0.001
-  double cv;           // coefficient of variation of row degrees, default 0.5
-  int min;              // minimum nonzeros per row, default 1
-  double imbalance;   // (max-avg)/avg, default -1.0 means "unset, use ncols-1"
-  int is_symmetric;   // 1 = force symmetric (row_cnt must equal col_cnt)
-  int is_column;       // 1 = degree distribution is over columns, not rows
-  int low_bandwidth;  // default row_cnt - 1 (no banding)
-  int up_bandwidth;    // default row_cnt - 1 (no banding, ignored if symmetric)
-  int random_seed;     // default 1
+  double density;    // nonzero ratio, default 0.001
+  double cv;         // coefficient of variation of row degrees, default 0.5
+  int min;           // minimum nonzeros per row, default 1
+  double imbalance;  // (max-avg)/avg, default -1.0 means "unset, use ncols-1"
+  int is_symmetric;  // 1 = force symmetric (row_cnt must equal col_cnt)
+  int is_column;     // 1 = degree distribution is over columns, not rows
+  int low_bandwidth; // default row_cnt - 1 (no banding)
+  int up_bandwidth;  // default row_cnt - 1 (no banding, ignored if symmetric)
+  int random_seed;   // default 1
 } genmat_params_t;
 
 // Fills in all the defaults the original CLI used, for the given shape.
@@ -45,6 +45,9 @@ genmat_params_t genmat_default_params(int row_cnt, int col_cnt);
 // only "symmetric requested but not square"), returns a struct with
 // nrows == -1 and all pointers NULL; check this before using the result.
 csr_matrix_t genmat_generate_csr(genmat_params_t params);
+
+// save CSR to file in Matrix Market format
+int genmat_save_csr_to_mtx(const csr_matrix_t *csr, const char *filename);
 
 // Frees row_ptr/col_idx/values and zeroes the struct.
 void genmat_free_csr(csr_matrix_t *m);
