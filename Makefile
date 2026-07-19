@@ -20,6 +20,9 @@
 TARGET_ARCH ?= native
 BUILD_TYPE  ?= release
 
+OPENMP   ?= 0
+VALGRIND ?= 0
+
 # ------------------------------------------------------------------------------
 # Directories
 # ------------------------------------------------------------------------------
@@ -32,6 +35,10 @@ TEST_DIR    := tests
 EXAMPLE_DIR := examples
 LIB_DIR     := lib
 
+TOOLS_DIR    := tools
+TOOLS_SRC_DIR    := $(TOOLS_DIR)/src
+TOOLS_INC_DIR    := $(TOOLS_DIR)/include
+
 # ------------------------------------------------------------------------------
 # Toolchain & Architecture Flags Selection
 # ------------------------------------------------------------------------------
@@ -39,6 +46,7 @@ LIB_DIR     := lib
 ifeq ($(TARGET_ARCH), riscv)
     CC := riscv64-linux-gnu-gcc
     AR := riscv64-linux-gnu-ar
+    # AR := riscv64-linux-gnu-gcc-ar
 
     ARCH_FLAGS := -march=rv64gcv -mabi=lp64d -static
     EXEC_WRAPPER := qemu-riscv64-static -cpu rv64,v=true
@@ -48,17 +56,22 @@ else
     CC := gcc
     AR := ar
 
-    ARCH_FLAGS := -march=native
-    EXEC_WRAPPER :=
+    ifeq ($(VALGRIND),1)
+        ARCH_FLAGS := -march=x86-64-v2
+        $(info ---> Target Architecture: x86-64 (Valgrind))
+    else
+        ARCH_FLAGS := -march=native
+        $(info ---> Target Architecture: Native Host)
+    endif
 
-    $(info ---> Target Architecture: NATIVE Host)
+    EXEC_WRAPPER :=
 endif
 
 # ------------------------------------------------------------------------------
 # Compiler and Linker Flags
 # ------------------------------------------------------------------------------
 
-CFLAGS := -Wall -Wextra -Wpedantic -std=c11 -I$(INC_DIR) $(ARCH_FLAGS)
+CFLAGS := -Wall -Wextra -Wpedantic -std=c11 -I$(INC_DIR) -I$(TOOLS_INC_DIR) $(ARCH_FLAGS)
 LDFLAGS :=
 LDLIBS := -lm
 
@@ -69,6 +82,11 @@ else
     CFLAGS += -O3 -flto
     LDFLAGS += -flto
     $(info ---> Build Type: RELEASE)
+endif
+
+ifeq ($(OPENMP),1)
+	CFLAGS  += -fopenmp
+	LDLIBS  += -fopenmp
 endif
 
 # ------------------------------------------------------------------------------
@@ -87,6 +105,13 @@ OBJS := $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
 STATIC_LIB := $(LIB_DIR)/librvsparse.a
 
 # ------------------------------------------------------------------------------
+# Tool Sources
+# ------------------------------------------------------------------------------
+
+TOOLS_SRCS := $(shell find $(TOOLS_SRC_DIR) -name '*.c')
+TOOLS_OBJS := $(patsubst $(TOOLS_SRC_DIR)/%.c,$(OBJ_DIR)/tools/%.o,$(TOOLS_SRCS))
+
+# ------------------------------------------------------------------------------
 # Test Files
 # ------------------------------------------------------------------------------
 
@@ -99,10 +124,11 @@ TEST_BINS := $(patsubst $(TEST_DIR)/%.c,$(BIN_DIR)/test/%,$(TEST_SRCS))
 
 # Only build examples that are currently supported by the implemented API.
 # Keep future or experimental examples out of this list until their backend exists.
-EXAMPLE_SRCS := \
-	$(EXAMPLE_DIR)/spgemm_csr_f32.c
-
+# EXAMPLE_SRCS := \
+# 	$(EXAMPLE_DIR)/spgemm_csr_f32.c
+EXAMPLE_SRCS := $(shell find $(EXAMPLE_DIR) -name '*.c')
 EXAMPLE_BINS := $(patsubst $(EXAMPLE_DIR)/%.c,$(BIN_DIR)/examples/%,$(EXAMPLE_SRCS))
+#
 
 # ------------------------------------------------------------------------------
 # Targets
@@ -110,13 +136,14 @@ EXAMPLE_BINS := $(patsubst $(EXAMPLE_DIR)/%.c,$(BIN_DIR)/examples/%,$(EXAMPLE_SR
 
 .PHONY: all dirs clean test check examples run-examples print-config
 
-all: dirs $(STATIC_LIB) $(TEST_BINS) $(EXAMPLE_BINS)
+all: dirs $(STATIC_LIB) $(TOOLS_OBJS) $(TEST_BINS) $(EXAMPLE_BINS)
 
 dirs:
 	@mkdir -p $(OBJ_DIR) $(BIN_DIR) $(LIB_DIR)
 	@mkdir -p $(BIN_DIR)/test
 	@mkdir -p $(BIN_DIR)/examples
 	@mkdir -p $(dir $(OBJS))
+	@mkdir -p $(dir $(TOOLS_OBJS))
 
 $(STATIC_LIB): $(OBJS)
 	@echo "  AR      $@"
@@ -126,13 +153,17 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.c | dirs
 	@echo "  CC      $<"
 	@$(CC) $(CFLAGS) -c $< -o $@
 
-$(BIN_DIR)/test/%: $(TEST_DIR)/%.c $(STATIC_LIB) | dirs
-	@echo "  CCLD    $@"
-	@$(CC) $(CFLAGS) $< -L$(LIB_DIR) -lrvsparse $(LDFLAGS) $(LDLIBS) -o $@
+$(OBJ_DIR)/tools/%.o: $(TOOLS_SRC_DIR)/%.c | dirs
+	@echo "  CC      $<"
+	@$(CC) $(CFLAGS) -c $< -o $@
 
-$(BIN_DIR)/examples/%: $(EXAMPLE_DIR)/%.c $(STATIC_LIB) | dirs
+$(BIN_DIR)/test/%: $(TEST_DIR)/%.c $(STATIC_LIB) $(TOOLS_OBJS) | dirs
 	@echo "  CCLD    $@"
-	@$(CC) $(CFLAGS) $< -L$(LIB_DIR) -lrvsparse $(LDFLAGS) $(LDLIBS) -o $@
+	@$(CC) $(CFLAGS) $< $(TOOLS_OBJS) -L$(LIB_DIR) -lrvsparse $(LDFLAGS) $(LDLIBS) -o $@
+
+$(BIN_DIR)/examples/%: $(EXAMPLE_DIR)/%.c $(STATIC_LIB) $(TOOLS_OBJS) | dirs
+	@echo "  CCLD    $@"
+	@$(CC) $(CFLAGS) $< $(TOOLS_OBJS) -L$(LIB_DIR) -lrvsparse $(LDFLAGS) $(LDLIBS) -o $@
 
 test: all
 	@echo ""
@@ -167,6 +198,8 @@ print-config:
 	@echo "LDFLAGS      = $(LDFLAGS)"
 	@echo "LDLIBS       = $(LDLIBS)"
 	@echo "SRCS         = $(SRCS)"
+	@echo "TOOLS_SRCS   = $(TOOLS_SRCS)"
+	@echo "TOOLS_OBJS   = $(TOOLS_OBJS)"
 	@echo "TEST_SRCS    = $(TEST_SRCS)"
 	@echo "EXAMPLE_SRCS = $(EXAMPLE_SRCS)"
 

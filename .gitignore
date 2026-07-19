@@ -22,6 +22,7 @@ lib/
 .vscode/
 .idea/
 .DS_Store
+compile_commands.json
 
 # Temporary files
 *.tmp
@@ -29,3 +30,8 @@ lib/
 
 # Personal notes
 /docs/personal_notes.md
+
+# Misc 
+vgcore*  
+*/*.mtx
+*.bak
