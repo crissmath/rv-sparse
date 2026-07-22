@@ -52,28 +52,9 @@ The project is currently under active development and is being prepared as part 
 
 RV-Sparse is organized in layers:
 
-```text
-Public API
-   ↓
-Backend dispatch
-   ↓
-Internal wrappers
-   ↓
-Raw scalar / RVV kernels
-```
+![RV_structure](docs/assets/rv_sparse_structure.png)
 
 This design keeps the user-facing API stable while allowing different kernel implementations underneath.
-
-```mermaid
-flowchart TD
-    A[User Application] --> B[RV-Sparse Public API]
-    B --> C[Backend Dispatcher]
-    C --> D[Scalar Backend]
-    C --> E[RVV Backend]
-    D --> F[Raw CSR SpGEMM Kernels]
-    E --> F
-    F --> G[CSR Matrix Output]
-```
 
 Raw kernels are intentionally separated from the public API so they can be benchmarked, profiled, replaced, or optimized independently.
 
@@ -82,6 +63,8 @@ Raw kernels are intentionally separated from the public API so they can be bench
 ## Supported Matrix Format
 
 ### CSR: Compressed Sparse Row
+
+![CSR_rv_sparse](docs/assets/CSR_sparse.png)
 
 RV-Sparse currently focuses on CSR matrices.
 
@@ -134,15 +117,6 @@ nnz     = 7
 values  = [10, 2, 3, 9, 7, 8, 6]
 col_idx = [ 0, 3, 0, 1, 1, 2, 3]
 row_ptr = [ 0, 2, 4, 6, 7]
-```
-
-Interpretation:
-
-```text
-row 0 → values[0:2] → columns 0, 3
-row 1 → values[2:4] → columns 0, 1
-row 2 → values[4:6] → columns 1, 2
-row 3 → values[6:7] → column  3
 ```
 
 ---
@@ -522,55 +496,6 @@ make test
 ```
 
 If the Makefile does not yet expose a test target, tests can be built and run manually from the `tests/` directory.
-
----
-
-## Performance Methodology
-
-RV-Sparse evaluates sparse kernels using normalized metrics.
-
-Important metrics include:
-
-```text
-cycles_per_madd
-instructions_per_madd
-measured arithmetic intensity
-DRAM traffic
-IPC
-cache miss rates
-MPKI
-vector instruction ratio
-```
-
-For sparse kernels, total runtime alone is not sufficient because matrices have different sizes and structures.
-
-Performance should be normalized by useful work, such as multiply-add contribution pairs:
-
-```text
-cycles_per_madd = cycles / madd_pairs
-```
-
-The analysis distinguishes between:
-
-- Structured matrices with better locality.
-- Graph-like matrices with irregular memory access.
-- Low-work matrices where kernel overhead dominates.
-- High-compression matrices with more accumulator reuse.
-- Low-compression matrices with more output and marking pressure.
-
----
-
-## Current Optimization Focus
-
-Current optimization work focuses on:
-
-- Reducing memory traffic in RVV kernels.
-- Understanding indexed gather/scatter overhead.
-- Adding scalar/RVV hybrid dispatch policies.
-- Improving row-level workload classification.
-- Comparing scalar and RVV behavior across sparse matrix structures.
-- Profiling on real RISC-V hardware.
-- Using hardware performance counters to guide optimization decisions.
 
 ---
 
