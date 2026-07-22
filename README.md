@@ -52,7 +52,7 @@ The project is currently under active development and is being prepared as part 
 
 RV-Sparse is organized in layers:
 
-![RV_structure](docs/assets/rv_sparse_structure.png)
+<img src="docs/assets/rv_sparse_structure.png" width="600">
 
 This design keeps the user-facing API stable while allowing different kernel implementations underneath.
 
@@ -64,7 +64,7 @@ Raw kernels are intentionally separated from the public API so they can be bench
 
 ### CSR: Compressed Sparse Row
 
-![CSR_rv_sparse](docs/assets/CSR_sparse.png)
+<img src="docs/assets/CSR_sparse.png" width="800">
 
 RV-Sparse currently focuses on CSR matrices.
 
