@@ -8,15 +8,15 @@ The active development and documentation efforts are currently centered around t
 
 | Focus Area | Status | Comments / Next Steps |
 | :--- | :--- | :--- |
-| **Public API Design** | Work in Progress | Defining a stable and predictable interface for users (`rv_sparse.h`). |
-| **Directory Structure** | Proposed | Scalable layout established (OpenBLAS/MKL style). |
-| **CSR SpGEMM Interface** | Work in Progress | Standardizing the initial baseline kernels for sparse matrix multiplication. |
-| **Backend Selection Model** | Pending | Designing the dispatch mechanism (Scalar vs. GCC auto-vectorized vs. RVV). |
-| **Project Timeline** | Planning | Mapping out upcoming milestones and feature integrations. |
+| **Public API Design** | Established | Stable interface defined for users (`rv_sparse.h`). |
+| **Directory Structure** | Established | Standard C library layout implemented. |
+| **CSR SpGEMM Interface** | Implemented | Baseline kernels for sparse matrix multiplication standardized. |
+| **Backend Selection Model** | Work in Progress | Refining the dispatch mechanism (Scalar vs. GCC auto-vectorized vs. RVV). |
+| **Project Timeline** | Active | Tracking milestones and upcoming feature integrations. |
 
 ## Library Architecture
 
-The proposed library structure ensures a strict separation of concerns. Below is the visual representation of the architecture followed by its detailed components:
+The library structure ensures a strict separation of concerns. Below is the visual representation of the architecture followed by its detailed components:
 
 ```text
 +-------------------------------------------------------------+

@@ -178,46 +178,7 @@ This avoids clearing the full dense accumulator for every row.
 
 ## Algorithm 1: Scalar Row-Wise Gustavson/SPA CSR SpGEMM
 
-```text
-Input:
-    CSR matrices A and B
-
-Output:
-    CSR matrix C = A × B
-
-1:  allocate dense accumulator acc[num_cols_B]
-2:  allocate mark[num_cols_B]
-3:  allocate touched[num_cols_B]
-4:  allocate C_row_ptr[num_rows_A + 1]
-
-5:  for i = 0 to num_rows_A - 1 do
-6:      touched_count = 0
-
-7:      for each nonzero A(i,k) do
-8:          a_val = A(i,k)
-
-9:          for each nonzero B(k,col) do
-10:             if col is not marked do
-11:                 mark[col] = true
-12:                 append col to touched
-13:                 acc[col] = 0
-14:             end if
-
-15:             acc[col] += a_val * B(k,col)
-16:         end for
-17:     end for
-
-18:     sort touched columns
-19:     count nonzero entries in acc[touched]
-20:     update C_row_ptr[i + 1]
-21:     clear acc and mark entries in touched
-22: end for
-
-23: allocate C_col_idx and C_values using the computed nnz(C)
-24: repeat the same row-wise accumulation
-25: write sorted nonzero acc[touched] entries into C
-26: return C
-```
+<img src="docs/assets/rv_sparse_algo_1.PNG" width="600">
 
 ---
 
@@ -227,71 +188,11 @@ The RVV path attempts to vectorize the accumulation over entries of rows of `B`.
 
 Because sparse accumulation uses indirect column indices, the RVV implementation may require indexed loads and stores into the accumulator.
 
-```text
-Input:
-    CSR matrices A and B
-
-Output:
-    CSR matrix C = A × B
-
-1:  detect duplicate column indices in rows of B
-2:  allocate dense accumulator acc[num_cols_B]
-3:  allocate mark[num_cols_B]
-4:  allocate touched[num_cols_B]
-5:  allocate C_row_ptr[num_rows_A + 1]
-
-6:  for i = 0 to num_rows_A - 1 do
-7:      touched_count = 0
-
-8:      for each nonzero A(i,k) do
-9:          a_val = A(i,k)
-
-10:         scan row B(k,:) to mark touched columns
-
-11:         if row B(k,:) has duplicate columns do
-12:             accumulate B(k,:) into acc using scalar code
-13:         else
-14:             vload B column indices
-15:             vload B values
-16:             vgather acc[B_col_idx]
-17:             vacc = vacc + a_val * B_values
-18:             vscatter acc[B_col_idx]
-19:         end if
-20:     end for
-
-21:     sort touched columns
-22:     count nonzero entries in acc[touched]
-23:     update C_row_ptr[i + 1]
-24:     clear acc and mark entries in touched
-25: end for
-
-26: allocate C_col_idx and C_values using the computed nnz(C)
-27: repeat the same row-wise RVV/scalar-fallback accumulation
-28: write sorted nonzero acc[touched] entries into C
-29: return C
-```
+<img src="docs/assets/rv_sparse_algo_2.PNG" width="600">
 
 ---
 
-## Notes on RVV SpGEMM
-
-The RVV kernels are experimental and are not assumed to be faster for every sparse workload.
-
-Sparse SpGEMM may be limited by:
-
-- Irregular memory access.
-- Indexed gather/scatter overhead.
-- Accumulator and marker traffic.
-- Row imbalance.
-- Small row sizes.
-- Low reuse.
-- Cache and memory latency.
-- Duplicate column handling.
-
-For this reason, RVV acceleration must be validated per workload and compared against scalar baselines.
-
-Future optimization work includes scalar/RVV hybrid dispatch policies based on row-level workload characteristics.
-
+> Note: The RVV kernels are experimental and are not assumed to be faster for every sparse workload.
 ---
 
 ## Build
@@ -451,14 +352,11 @@ docs/directory_structure.md
 
 Available documentation:
 
-- `docs/README.md`  
-  Documentation index.
+- [Documentation index.](docs/README.md)
 
-- `docs/api_design.md`  
-  API and backend architecture.
+- [API and backend architecture.](docs/api_design.md)  
 
-- `docs/directory_structure.md`  
-  Repository structure and file organization.
+- [Repository structure and file organization.](docs/directory_structure.md)  
 
 ---
 
@@ -525,9 +423,7 @@ Recommended workflow:
 
 See:
 
-```text
-CONTRIBUTING.md
-```
+[CONTRIBUTING.md](CONTRIBUTING.md)
 
 ---
 
@@ -535,6 +431,5 @@ CONTRIBUTING.md
 
 See:
 
-```text
-LICENSE
-```
+[LICENSE](LICENSE)
+

@@ -4,7 +4,7 @@
 
 The initial `rv-sparse` API provides a clean C interface for sparse matrix operations while keeping the low-level kernel implementations separated from the public interface.
 
-The current implementation focuses on CSR sparse matrix-matrix multiplication using a scalar FP32 baseline kernel.
+The current implementation focuses on CSR sparse matrix-matrix multiplication supporting multiple data types and optimized backends (Scalar and RVV).
 
 ## Current Supported Operation
 
@@ -16,29 +16,34 @@ C = A * B
 
 where `A`, `B`, and `C` are sparse matrices stored in Compressed Sparse Row (CSR) format.
 
-## Current Supported Data Type
+## Current Supported Data Types
 
-The implemented data type combination is:
+The implemented data type combinations are:
 
 ```text
 FP32 x FP32 -> FP32
+FP64 x FP64 -> FP64
+INT8 x INT8 -> INT8
 ```
 
 This means that:
 
-* `A.values` must contain `float` values.
-* `B.values` must contain `float` values.
-* `C.values` is allocated and returned as `float` values.
+* `values` arrays must contain `float`, `double`, or `int8_t` types respectively.
+* The API dynamically manages these types through the `rvsp_dtype_t` enumeration (`RVSP_DTYPE_FP32`, `RVSP_DTYPE_FP64`, `RVSP_DTYPE_INT8`).
 
-## Current Supported Backend
+## Current Supported Backends
 
-The currently implemented backend is:
+The currently implemented backends are:
 
 ```text
 RVSP_BACKEND_SCALAR
+RVSP_BACKEND_RVV
 ```
 
-The API defines additional backend identifiers for future work, but only the scalar FP32 path is currently implemented in the dispatcher.
+The engine provides specific kernel implementations for these backends:
+
+* **Scalar**: Baseline implementations (`csr_scalar_*`) and optimized unrolled versions (e.g., `csr_scalar_unroll4_f32`).
+* **RVV (RISC-V Vector)**: Highly optimized vector kernels using indexed and marked approaches along with fast row accumulators (`csr_rvv_*_indexed_marked`, `accumulate_row_*_rvv_indexed_fast`).
 
 ## Architecture
 
@@ -72,11 +77,11 @@ src/core/spgemm.c
 
 This layer selects the correct implementation according to:
 
-* selected backend
+* selected backend (Scalar or RVV)
 * input data type
 * output data type
 
-Currently, the dispatcher supports the scalar FP32 CSR SpGEMM path.
+Currently, the dispatcher supports routing to both Scalar and RVV execution paths for all supported data types (FP32, FP64, INT8).
 
 ### 3. Internal wrapper layer
 
@@ -95,20 +100,24 @@ The wrapper is responsible for:
 * checking matrix dimensions
 * checking data types
 * casting `void *values` to the correct typed pointer
-* calling the raw pointer kernel
+* calling the specific raw pointer kernel based on dispatch rules
 * filling the output `rvsp_csr_matrix_t`
 
 ### 4. Raw kernel layer
 
-The raw kernel is implemented in:
+The raw kernels are implemented in `src/kernels/spgemm/` and include files such as:
 
 ```text
-src/kernels/spgemm/csr_scalar_f32.c
+csr_scalar_f32.c
+csr_scalar_f64.c
+csr_scalar_i8.c
+csr_rvv_f32_indexed_marked.c
+...
 ```
 
-This layer contains the actual computational kernel.
+This layer contains the actual computational engines.
 
-The current raw kernel uses plain pointers and dimensions instead of public structs. This design keeps kernels simple, portable, and easier to optimize in future RISC-V implementations.
+The raw kernels use plain pointers and dimensions instead of public structs. This design keeps kernels simple, portable, and easier to optimize using specific RISC-V intrinsics or inline assembly.
 
 ## Main Public Types
 
@@ -141,7 +150,7 @@ col_idx size: nnz
 values  size: nnz
 ```
 
-The `values` field is stored as `void *` so the same matrix descriptor can be reused for different data types. In the current implementation, FP32 matrices use `float *` values.
+The `values` field is stored as `void *` so the same matrix descriptor can be reused for different data types (`float *`, `double *`, `int8_t *`).
 
 ### `rvsp_spgemm_options_t`
 
@@ -156,18 +165,16 @@ typedef struct {
 } rvsp_spgemm_options_t;
 ```
 
-Current supported configuration:
+Example configuration for an RVV FP64 execution:
 
 ```c
 rvsp_spgemm_options_t options = {
-    .backend = RVSP_BACKEND_SCALAR,
-    .input_dtype = RVSP_DTYPE_FP32,
-    .output_dtype = RVSP_DTYPE_FP32,
+    .backend = RVSP_BACKEND_RVV,
+    .input_dtype = RVSP_DTYPE_FP64,
+    .output_dtype = RVSP_DTYPE_FP64,
     .sort_output_indices = 1
 };
 ```
-
-The current scalar FP32 implementation writes output column indices in increasing order because it scans the temporary accumulator from column `0` to `B->cols - 1`.
 
 ## Public Functions
 
@@ -238,18 +245,6 @@ rvsp_status_t rvsp_spgemm_csr(
 );
 ```
 
-Current supported operation:
-
-```text
-CSR FP32 x CSR FP32 -> CSR FP32
-```
-
-Current supported backend:
-
-```text
-RVSP_BACKEND_SCALAR
-```
-
 If an unsupported backend or data type combination is requested, the function returns an error status.
 
 ## Ownership Model
@@ -268,32 +263,6 @@ Output matrix:
 * The output matrix has `owns_data = 1`.
 * The caller must release the output matrix with `rvsp_csr_destroy(&C)`.
 
-## Current Example
-
-The current public API example is located at:
-
-```text
-examples/spgemm_csr_f32.c
-```
-
-It demonstrates how to:
-
-* create CSR matrix descriptors
-* configure scalar FP32 SpGEMM options
-* call `rvsp_spgemm_csr()`
-* print the resulting CSR matrix
-* destroy matrix descriptors
-
-## Current Test
-
-The current correctness test is located at:
-
-```text
-tests/test_spgemm_csr_f32.c
-```
-
-It verifies that the scalar FP32 CSR SpGEMM implementation produces the expected CSR output.
-
 ## Current Design Rule
 
 The public API should remain stable as new kernels are added.
@@ -301,10 +270,10 @@ The public API should remain stable as new kernels are added.
 New implementations should be added internally by providing:
 
 1. a raw pointer kernel
-2. an internal wrapper
+2. an internal wrapper integration
 3. a dispatcher branch
-4. an example
-5. a correctness test
+4. an example implementation
+5. a correctness test in the test suite
 
 User code should continue to call the same public function:
 
